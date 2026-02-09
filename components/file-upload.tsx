@@ -1,12 +1,13 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { Camera, X, FileText } from "lucide-react"
+import { Camera, X, FileText, Loader2 } from "lucide-react"
+import { uploadFileFromBrowser, deleteFileFromBrowser, type FileCategory } from "@/lib/supabase/client-storage"
 
 interface FileData {
   name: string
   type: string
-  data: string
+  data: string // Now contains storage URL instead of base64
   preview?: string
 }
 
@@ -19,6 +20,7 @@ interface FileUploadProps {
   files: FileData[]
   onChange: (files: FileData[]) => void
   maxSizeMB?: number // 파일 크기 제한 (MB)
+  category: FileCategory // Supabase Storage bucket category
 }
 
 export function FileUpload({
@@ -30,53 +32,76 @@ export function FileUpload({
   files,
   onChange,
   maxSizeMB = 10, // 기본값 10MB
+  category,
 }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   const handleFiles = useCallback(
-    (fileList: FileList) => {
+    async (fileList: FileList) => {
       setError(null)
-      const remaining = maxFiles - files.length
-      const newFiles = Array.from(fileList).slice(0, remaining)
+      setUploading(true)
 
-      // 파일 크기 검증
-      const maxSizeBytes = maxSizeMB * 1024 * 1024
-      const oversizedFiles = newFiles.filter(file => file.size > maxSizeBytes)
+      try {
+        const remaining = maxFiles - files.length
+        const newFiles = Array.from(fileList).slice(0, remaining)
 
-      if (oversizedFiles.length > 0) {
-        setError(`파일 크기는 ${maxSizeMB}MB를 초과할 수 없습니다.`)
-        return
-      }
+        // 파일 크기 검증
+        const maxSizeBytes = maxSizeMB * 1024 * 1024
+        const oversizedFiles = newFiles.filter(file => file.size > maxSizeBytes)
 
-      Promise.all(
-        newFiles.map(
-          (file) =>
-            new Promise<FileData>((resolve) => {
+        if (oversizedFiles.length > 0) {
+          setError(`파일 크기는 ${maxSizeMB}MB를 초과할 수 없습니다.`)
+          return
+        }
+
+        // Upload files to Supabase Storage and get preview URLs
+        const uploadPromises = newFiles.map(async (file) => {
+          // Upload to Supabase Storage
+          const uploaded = await uploadFileFromBrowser(file, category)
+
+          // Generate preview for images
+          let preview: string | undefined
+          if (file.type.startsWith("image/")) {
+            preview = await new Promise<string>((resolve) => {
               const reader = new FileReader()
-              reader.onload = () => {
-                const base64 = reader.result as string
-                resolve({
-                  name: file.name,
-                  type: file.type,
-                  data: base64,
-                  preview: file.type.startsWith("image/") ? base64 : undefined,
-                })
-              }
+              reader.onload = () => resolve(reader.result as string)
               reader.readAsDataURL(file)
             })
-        )
-      ).then((newFileData) => {
+          }
+
+          return {
+            name: uploaded.fileName,
+            type: uploaded.fileType,
+            data: uploaded.storageUrl, // Storage URL instead of base64
+            preview,
+          }
+        })
+
+        const newFileData = await Promise.all(uploadPromises)
         onChange([...files, ...newFileData])
-      }).catch((err) => {
-        setError('파일을 읽는 중 오류가 발생했습니다.')
-        console.error('File read error:', err)
-      })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '파일 업로드 중 오류가 발생했습니다.')
+        console.error('File upload error:', err)
+      } finally {
+        setUploading(false)
+      }
     },
-    [files, maxFiles, onChange, maxSizeMB]
+    [files, maxFiles, onChange, maxSizeMB, category]
   )
 
-  const removeFile = (index: number) => {
+  const removeFile = async (index: number) => {
+    const fileToRemove = files[index]
+
+    // Delete from Supabase Storage
+    try {
+      await deleteFileFromBrowser(category, fileToRemove.data)
+    } catch (err) {
+      console.error('Failed to delete file from storage:', err)
+      // Continue with removal from UI even if storage deletion fails
+    }
+
     onChange(files.filter((_, i) => i !== index))
   }
 
@@ -96,19 +121,20 @@ export function FileUpload({
 
       <div
         className={`relative overflow-hidden rounded-lg border-2 border-dashed transition-colors ${
+          uploading ? "border-primary bg-accent opacity-50 pointer-events-none" :
           isDragging
             ? "border-primary bg-accent"
             : "border-border hover:border-primary/50"
         }`}
         onDragOver={(e) => {
           e.preventDefault()
-          setIsDragging(true)
+          if (!uploading) setIsDragging(true)
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={(e) => {
           e.preventDefault()
           setIsDragging(false)
-          handleFiles(e.dataTransfer.files)
+          if (!uploading) handleFiles(e.dataTransfer.files)
         }}
       >
         <input
@@ -116,22 +142,34 @@ export function FileUpload({
           id={id}
           accept={accept}
           multiple={maxFiles > 1}
-          className="absolute inset-0 cursor-pointer opacity-0"
+          disabled={uploading}
+          className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
           onChange={(e) => {
             if (e.target.files) handleFiles(e.target.files)
             e.target.value = ""
           }}
         />
         <div className="flex cursor-pointer flex-col items-center gap-2 px-4 py-6">
-          <Camera className="h-8 w-8 text-primary" />
-          <span className="text-sm font-medium text-foreground">
-            {"사진 선택 (카메라/갤러리 최대 "}
-            {maxFiles}
-            {"장)"}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {"클릭 또는 드래그하여 업로드"}
-          </span>
+          {uploading ? (
+            <>
+              <Loader2 className="h-8 w-8 text-primary animate-spin" />
+              <span className="text-sm font-medium text-foreground">
+                {"업로드 중..."}
+              </span>
+            </>
+          ) : (
+            <>
+              <Camera className="h-8 w-8 text-primary" />
+              <span className="text-sm font-medium text-foreground">
+                {"사진 선택 (카메라/갤러리 최대 "}
+                {maxFiles}
+                {"장)"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {"클릭 또는 드래그하여 업로드"}
+              </span>
+            </>
+          )}
         </div>
       </div>
 

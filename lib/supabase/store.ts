@@ -1,5 +1,5 @@
 import { supabaseAdmin } from './client'
-import { uploadFile, deleteFilesByApplicationId } from './storage'
+import { deleteFilesByApplicationId } from './storage'
 import type { ApplicationRow, FileAttachmentRow } from './types'
 import * as memoryStore from '@/lib/store'
 
@@ -10,7 +10,7 @@ const isSupabaseConfigured = () => !!process.env.NEXT_PUBLIC_SUPABASE_URL
 export interface FileAttachment {
   name: string
   type: string
-  data: string // base64 for input, URL for output
+  data: string // Storage URL (already uploaded from client)
 }
 
 export interface Application {
@@ -155,8 +155,8 @@ export async function addApplication(
     throw new Error(`Failed to create application: ${appError?.message}`)
   }
 
-  // 2. Upload files to Storage and save references (실패해도 신청서 생성은 유지)
-  const uploadCategory = async (
+  // 2. Save file references (files are already uploaded from client)
+  const saveFileReferences = async (
     files: FileAttachment[],
     category: 'product_photos' | 'store_signboard' | 'transaction_docs'
   ) => {
@@ -164,38 +164,38 @@ export async function addApplication(
       if (!file.data) continue
 
       try {
-        const uploadResult = await uploadFile(
-          file.data,
-          file.name,
-          file.type,
-          category,
-          newApp.id
-        )
+        // Extract storage path from URL
+        // URL format: https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>
+        const bucketName = category === 'product_photos' ? 'product-photos' :
+                          category === 'store_signboard' ? 'store-signboards' :
+                          'transaction-docs'
+        const urlParts = file.data.split(`/${bucketName}/`)
+        const storagePath = urlParts.length > 1 ? urlParts[1] : file.data
 
         await supabaseAdmin.from('file_attachments').insert({
           application_id: newApp.id,
           file_category: category,
-          file_name: uploadResult.fileName,
-          file_type: uploadResult.fileType,
-          storage_path: uploadResult.storagePath,
-          storage_url: uploadResult.storageUrl
+          file_name: file.name,
+          file_type: file.type,
+          storage_path: storagePath,
+          storage_url: file.data
         })
-      } catch (uploadErr) {
-        console.warn(`Supabase file upload failed (${category}):`, uploadErr)
-        // 업로드 실패해도 throw하지 않음 - 신청서는 이미 생성됨
+      } catch (saveErr) {
+        console.warn(`Failed to save file reference (${category}):`, saveErr)
+        // 저장 실패해도 throw하지 않음 - 신청서는 이미 생성됨
       }
     }
   }
 
   try {
     await Promise.all([
-      uploadCategory(app.productPhotos, 'product_photos'),
-      uploadCategory(app.storeSignboard, 'store_signboard'),
-      uploadCategory(app.transactionDocs, 'transaction_docs')
+      saveFileReferences(app.productPhotos, 'product_photos'),
+      saveFileReferences(app.storeSignboard, 'store_signboard'),
+      saveFileReferences(app.transactionDocs, 'transaction_docs')
     ])
-  } catch (uploadError) {
-    // 업로드 실패 시에도 에러 throw하지 않음
-    console.warn('Supabase upload failed, application created without files:', uploadError)
+  } catch (saveError) {
+    // 저장 실패 시에도 에러 throw하지 않음
+    console.warn('Failed to save file references, application created without files:', saveError)
   }
 
   // 3. Fetch and return complete application

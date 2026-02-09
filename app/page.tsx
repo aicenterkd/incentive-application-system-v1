@@ -512,6 +512,7 @@ export default function ApplicationPage() {
             accept="image/*"
             files={productPhotos}
             onChange={setProductPhotos}
+            category="productPhotos"
           />
 
           {/* 7. Store Signboard */}
@@ -523,6 +524,7 @@ export default function ApplicationPage() {
             accept="image/*"
             files={storeSignboard}
             onChange={setStoreSignboard}
+            category="storeSignboard"
           />
 
           {/* 8. Transaction Docs */}
@@ -534,6 +536,7 @@ export default function ApplicationPage() {
             accept="image/*,application/pdf"
             files={transactionDocs}
             onChange={setTransactionDocs}
+            category="transactionDocs"
           />
 
           {/* 9. Bank Name */}
