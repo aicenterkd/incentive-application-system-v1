@@ -71,6 +71,10 @@ function rowToApplication(
  * Get all applications (without file data for performance)
  */
 export async function getAllApplications(): Promise<Application[]> {
+  if (!isSupabaseConfigured()) {
+    return memoryStore.getAllApplications()
+  }
+
   const { data: apps, error } = await supabaseAdmin
     .from('applications')
     .select('*')
@@ -102,6 +106,10 @@ export async function getAllApplications(): Promise<Application[]> {
  * Get application by ID (with full file data)
  */
 export async function getApplicationById(id: string): Promise<Application | undefined> {
+  if (!isSupabaseConfigured()) {
+    return memoryStore.getApplicationById(id)
+  }
+
   const { data: app, error: appError } = await supabaseAdmin
     .from('applications')
     .select('*')
@@ -212,6 +220,10 @@ export async function updateApplicationStatus(
   id: string,
   status: "approved" | "rejected"
 ): Promise<Application | null> {
+  if (!isSupabaseConfigured()) {
+    return memoryStore.updateApplicationStatus(id, status)
+  }
+
   const { data, error } = await supabaseAdmin
     .from('applications')
     .update({ status })
@@ -228,6 +240,10 @@ export async function updateApplicationStatus(
  * Delete application and its files
  */
 export async function deleteApplication(id: string): Promise<boolean> {
+  if (!isSupabaseConfigured()) {
+    return memoryStore.deleteApplication(id)
+  }
+
   try {
     // 1. Delete files from Storage
     await deleteFilesByApplicationId(id)
