@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { supabaseAdmin } from "@/lib/supabase/client"
+import { supabaseAdmin, isSupabaseConfigured } from "@/lib/supabase/client"
+import * as memoryStore from "@/lib/store"
 
 const EXAMPLE_STORES = [
   { name: "행복마트 향남점", address: "경기도 화성시 향남읍 은행나무로 23" },
@@ -21,6 +22,22 @@ const EXAMPLE_STORES = [
 
 export async function GET() {
   try {
+    if (!isSupabaseConfigured()) {
+      // Fallback: combine in-memory stores with example stores
+      const memStores = memoryStore.getStores()
+      const storeMap = new Map<string, string>()
+      for (const s of memStores) {
+        storeMap.set(s.name, s.address)
+      }
+      for (const s of EXAMPLE_STORES) {
+        if (!storeMap.has(s.name)) storeMap.set(s.name, s.address)
+      }
+      const stores = Array.from(storeMap.entries())
+        .map(([name, address]) => ({ name, address }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+      return NextResponse.json(stores)
+    }
+
     const { data: apps, error } = await supabaseAdmin
       .from("applications")
       .select("store_name, store_address")

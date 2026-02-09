@@ -1,10 +1,7 @@
-import { supabaseAdmin } from './client'
+import { supabaseAdmin, isSupabaseConfigured } from './client'
 import { uploadFile, deleteFilesByApplicationId } from './storage'
 import type { ApplicationRow, FileAttachmentRow } from './types'
 import * as memoryStore from '@/lib/store'
-
-// Check if Supabase is configured (skip fetch/upload when not set)
-const isSupabaseConfigured = () => !!process.env.NEXT_PUBLIC_SUPABASE_URL
 
 // Keep existing interfaces for backward compatibility
 export interface FileAttachment {
@@ -270,6 +267,10 @@ export async function deleteApplication(id: string): Promise<boolean> {
  * Get agency summaries
  */
 export async function getAgencySummaries(): Promise<AgencySummary[]> {
+  if (!isSupabaseConfigured()) {
+    return memoryStore.getAgencySummaries()
+  }
+
   const { data: apps, error } = await supabaseAdmin
     .from('applications')
     .select('agency_name, bank_name, account_number, incentive_amount')
@@ -304,6 +305,10 @@ export async function getAgencySummaries(): Promise<AgencySummary[]> {
  * Get statistics
  */
 export async function getStats() {
+  if (!isSupabaseConfigured()) {
+    return memoryStore.getStats()
+  }
+
   const { data: apps, error } = await supabaseAdmin
     .from('applications')
     .select('status, agency_name, incentive_amount')
