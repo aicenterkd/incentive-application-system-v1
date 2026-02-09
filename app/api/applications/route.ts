@@ -8,7 +8,15 @@ import {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    let body
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json(
+        { error: "요청 데이터를 처리할 수 없습니다. 파일 크기를 확인해주세요." },
+        { status: 400 }
+      )
+    }
 
     const {
       agencyName,

@@ -61,7 +61,12 @@ export default function AdminPage() {
     async function checkAuth() {
       try {
         const res = await fetch("/api/auth")
-        const data = await res.json()
+        let data
+        try {
+          data = await res.json()
+        } catch {
+          return
+        }
         if (data.authenticated) {
           setAuthenticated(true)
         }
@@ -84,7 +89,13 @@ export default function AdminPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: loginId, password: loginPw }),
       })
-      const data = await res.json()
+      let data
+      try {
+        data = await res.json()
+      } catch {
+        setLoginError("서버 응답을 처리할 수 없습니다.")
+        return
+      }
       if (data.success) {
         setAuthenticated(true)
         setLoginId("")
@@ -107,8 +118,19 @@ export default function AdminPage() {
         fetch("/api/applications?type=stats"),
         fetch("/api/applications"),
       ])
-      const statsData = await statsRes.json()
-      const appsData = await appsRes.json()
+
+      const safeJson = async (res: Response) => {
+        const text = await res.text()
+        try {
+          return JSON.parse(text)
+        } catch {
+          console.error("[v0] Response is not valid JSON:", text.slice(0, 100))
+          return null
+        }
+      }
+
+      const statsData = await safeJson(statsRes)
+      const appsData = await safeJson(appsRes)
       const isStatsValid =
         statsData &&
         typeof statsData.total === "number" &&

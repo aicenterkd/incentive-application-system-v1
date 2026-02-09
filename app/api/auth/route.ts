@@ -5,7 +5,17 @@ const ADMIN_ID = "admin";
 const ADMIN_PW = "$init0000!";
 
 export async function POST(request: Request) {
-  const { username, password } = await request.json();
+  let username: string, password: string;
+  try {
+    const body = await request.json();
+    username = body.username;
+    password = body.password;
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "잘못된 요청입니다." },
+      { status: 400 }
+    );
+  }
 
   if (username === ADMIN_ID && password === ADMIN_PW) {
     const cookieStore = await cookies();

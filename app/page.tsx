@@ -124,7 +124,13 @@ export default function ApplicationPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: loginId, password: loginPw }),
       })
-      const data = await res.json()
+      let data
+      try {
+        data = await res.json()
+      } catch {
+        setLoginError("서버 응답을 처리할 수 없습니다.")
+        return
+      }
 
       if (data.success) {
         window.location.href = "/admin"
@@ -191,8 +197,16 @@ export default function ApplicationPage() {
       })
 
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "제출에 실패했습니다.")
+        let errorMsg = "제출에 실패했습니다."
+        try {
+          const data = await res.json()
+          errorMsg = data.error || errorMsg
+        } catch {
+          // Response was not JSON (e.g. "Request Entity Too Large")
+          const text = await res.text().catch(() => "")
+          if (text) errorMsg = text
+        }
+        throw new Error(errorMsg)
       }
 
       setStatus("success")

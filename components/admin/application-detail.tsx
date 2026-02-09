@@ -78,7 +78,15 @@ export function ApplicationDetail({
 
   useEffect(() => {
     fetch(`/api/applications/${id}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        const text = await r.text()
+        try {
+          return JSON.parse(text)
+        } catch {
+          console.error("[v0] Response is not valid JSON:", text.slice(0, 100))
+          return { error: "Invalid response" }
+        }
+      })
       .then((data) => {
         if (data.error) {
           setApp(null)
