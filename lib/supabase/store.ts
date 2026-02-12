@@ -68,9 +68,10 @@ function rowToApplication(
 }
 
 /**
- * Get all applications (without file data for performance)
+ * Get all applications
+ * @param includeFiles - Whether to include file data (default: false for performance)
  */
-export async function getAllApplications(): Promise<Application[]> {
+export async function getAllApplications(includeFiles = false): Promise<Application[]> {
   const { data: apps, error } = await supabaseAdmin
     .from('applications')
     .select('*')
@@ -79,23 +80,44 @@ export async function getAllApplications(): Promise<Application[]> {
   if (error) throw new Error(`Failed to fetch applications: ${error.message}`)
   if (!apps) return []
 
-  // Return without file URLs (only metadata)
-  return apps.map(row => ({
-    id: row.id,
-    agencyName: row.agency_name,
-    managerName: row.manager_name,
-    employeeName: row.employee_name,
-    storeName: row.store_name,
-    storeAddress: row.store_address,
-    bankName: row.bank_name,
-    accountNumber: row.account_number,
-    status: row.status,
-    incentiveAmount: row.incentive_amount,
-    createdAt: row.created_at,
-    productPhotos: [],
-    storeSignboard: [],
-    transactionDocs: []
-  }))
+  // If files not needed, return without file URLs
+  if (!includeFiles) {
+    return apps.map((row: ApplicationRow): Application => ({
+      id: row.id,
+      agencyName: row.agency_name,
+      managerName: row.manager_name,
+      employeeName: row.employee_name,
+      storeName: row.store_name,
+      storeAddress: row.store_address,
+      bankName: row.bank_name,
+      accountNumber: row.account_number,
+      status: row.status,
+      incentiveAmount: row.incentive_amount,
+      createdAt: row.created_at,
+      productPhotos: [],
+      storeSignboard: [],
+      transactionDocs: []
+    }))
+  }
+
+  // Fetch all file attachments
+  const { data: allFiles, error: filesError } = await supabaseAdmin
+    .from('file_attachments')
+    .select('*')
+
+  if (filesError) throw new Error(`Failed to fetch files: ${filesError.message}`)
+
+  // Map files by application ID
+  const filesByAppId = new Map<string, FileAttachmentRow[]>()
+  for (const file of allFiles || []) {
+    if (!filesByAppId.has(file.application_id)) {
+      filesByAppId.set(file.application_id, [])
+    }
+    filesByAppId.get(file.application_id)!.push(file)
+  }
+
+  // Return applications with file data
+  return apps.map((row: ApplicationRow) => rowToApplication(row, filesByAppId.get(row.id) || []))
 }
 
 /**
@@ -288,6 +310,7 @@ export async function getAgencySummaries(): Promise<AgencySummary[]> {
  * Get statistics
  */
 export async function getStats() {
+  type StatsRow = { status: string; agency_name: string; incentive_amount: number }
   const { data: apps, error } = await supabaseAdmin
     .from('applications')
     .select('status, agency_name, incentive_amount')
@@ -303,20 +326,21 @@ export async function getStats() {
     }
   }
 
-  const total = apps.length
-  const pending = apps.filter(a => a.status === 'pending').length
-  const approved = apps.filter(a => a.status === 'approved').length
-  const rejected = apps.filter(a => a.status === 'rejected').length
+  const typedApps = apps as StatsRow[]
+  const total = typedApps.length
+  const pending = typedApps.filter((a: StatsRow) => a.status === 'pending').length
+  const approved = typedApps.filter((a: StatsRow) => a.status === 'approved').length
+  const rejected = typedApps.filter((a: StatsRow) => a.status === 'rejected').length
 
   const agencyMap = new Map<string, number>()
-  for (const app of apps.filter(a => a.status !== 'rejected')) {
+  for (const app of typedApps.filter((a: StatsRow) => a.status !== 'rejected')) {
     const count = agencyMap.get(app.agency_name) || 0
     agencyMap.set(app.agency_name, count + 1)
   }
 
-  const totalIncentive = apps
-    .filter(a => a.status === 'approved')
-    .reduce((sum, a) => sum + a.incentive_amount, 0)
+  const totalIncentive = typedApps
+    .filter((a: StatsRow) => a.status === 'approved')
+    .reduce((sum: number, a: StatsRow) => sum + a.incentive_amount, 0)
 
   return {
     total,

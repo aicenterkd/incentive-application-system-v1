@@ -26,6 +26,25 @@ function parseBase64Data(data: string): { base64: string; extension: string } | 
   return { base64: data, extension: "jpeg" }
 }
 
+async function fetchImageAsBase64(url: string): Promise<{ base64: string; extension: string } | null> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+
+    const arrayBuffer = await response.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+    const base64 = buffer.toString('base64')
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg'
+    const extension = getImageExtension(contentType)
+
+    return { base64, extension }
+  } catch (error) {
+    console.error('Failed to fetch image:', url, error)
+    return null
+  }
+}
+
 function applyHeaderStyle(headerRow: ExcelJS.Row) {
   headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } }
   headerRow.fill = {
@@ -57,7 +76,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const approvedOnly = searchParams.get("approvedOnly") !== "false"
-    const allApps = await getAllApplications()
+    const allApps = await getAllApplications(true) // Include file data
     const applications = approvedOnly
       ? allApps.filter((a) => a.status === "approved")
       : allApps
@@ -70,13 +89,34 @@ export async function GET(request: NextRequest) {
     })
     const headers1 = ["본사담당자명", "대리점명", "직원명", "마트상호명", "제품진열사진"]
     applyHeaderStyle(sheet1.addRow(headers1))
-    sheet1.columns = [{ width: 18 }, { width: 20 }, { width: 14 }, { width: 25 }, { width: 24 }]
+    sheet1.columns = [{ width: 18 }, { width: 20 }, { width: 14 }, { width: 25 }, { width: 30 }]
 
-    const ROW_HEIGHT = 80
+    const ROW_HEIGHT = 160
+
+    // Process images in parallel for better performance
+    const imageDataPromises = applications.map(async (app, index) => {
+      const photos = Array.isArray(app.productPhotos) ? app.productPhotos : []
+      const firstPhoto = photos[0]
+
+      if (!firstPhoto || !firstPhoto.data || typeof firstPhoto.data !== "string") {
+        return null
+      }
+
+      // Handle both base64 and URL images
+      if (firstPhoto.data.startsWith("http")) {
+        return await fetchImageAsBase64(firstPhoto.data)
+      } else {
+        return parseBase64Data(firstPhoto.data)
+      }
+    })
+
+    const imageDataResults = await Promise.all(imageDataPromises)
+
     applications.forEach((app, index) => {
       const rowIndex = index + 2
       const photos = Array.isArray(app.productPhotos) ? app.productPhotos : []
       const firstPhoto = photos[0]
+
       sheet1.addRow([
         String(app.managerName ?? ""),
         String(app.agencyName ?? ""),
@@ -84,26 +124,25 @@ export async function GET(request: NextRequest) {
         String(app.storeName ?? ""),
         firstPhoto ? "" : "-",
       ])
+
       try {
         sheet1.getRow(rowIndex).height = ROW_HEIGHT / 0.75
       } catch {
         // ignore row height error
       }
 
-      if (firstPhoto && firstPhoto.data && typeof firstPhoto.data === "string" && !firstPhoto.data.startsWith("http")) {
+      const imageData = imageDataResults[index]
+      if (imageData && imageData.base64.length > 0) {
         try {
-          const parsed = parseBase64Data(firstPhoto.data)
-          if (parsed && parsed.base64.length > 0) {
-            const imageId = workbook.addImage({
-              base64: parsed.base64,
-              extension: parsed.extension,
-            })
-            sheet1.addImage(imageId, {
-              tl: { col: 4, row: rowIndex - 1 },
-              ext: { width: 100, height: ROW_HEIGHT - 4 },
-              editAs: "oneCell",
-            })
-          }
+          const imageId = workbook.addImage({
+            base64: imageData.base64,
+            extension: imageData.extension,
+          })
+          sheet1.addImage(imageId, {
+            tl: { col: 4, row: rowIndex - 1 },
+            ext: { width: 200, height: ROW_HEIGHT - 8 },
+            editAs: "oneCell",
+          })
         } catch {
           // 이미지 삽입 실패 시 해당 셀에 "-" 표시
           sheet1.getCell(rowIndex, 5).value = "-"
