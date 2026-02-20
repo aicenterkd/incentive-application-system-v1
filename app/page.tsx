@@ -30,7 +30,7 @@ function formatAccountNumber(value: string): string {
   const digits = value.replace(/\D/g, "")
   if (digits.length <= 3) return digits
   if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`
-  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 12)}`
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6, 14)}`
 }
 
 interface FileData {
@@ -506,7 +506,7 @@ export default function ApplicationPage() {
           {/* 6. Product Photos */}
           <FileUpload
             id="productPhotos"
-            label="6. 제품 진열 사진 (썬키스트 진열+점주샷)"
+            label="6. 제품 진열 사진 (썬키스트 진열 사진)"
             description="카메라 촬영 또는 갤러리에서 1-2장 선택"
             maxFiles={2}
             accept="image/*"
@@ -612,7 +612,7 @@ export default function ApplicationPage() {
               htmlFor="accountNumber"
               className="mb-2 block font-semibold text-card-foreground"
             >
-              {"10. 계좌번호 (예: 123-456-789012)"}
+              {"10. 계좌번호 (예: 123-456-78901234)"}
               <span className="ml-1 text-destructive">*</span>
             </label>
             <p className="mb-2 text-sm text-muted-foreground">
@@ -622,10 +622,10 @@ export default function ApplicationPage() {
               type="text"
               id="accountNumber"
               required
-              placeholder="123-456-789012"
+              placeholder="123-456-78901234"
               value={accountNumber}
               onChange={(e) => setAccountNumber(formatAccountNumber(e.target.value))}
-              maxLength={14}
+              maxLength={16}
               inputMode="numeric"
               className="w-full rounded-lg border border-input bg-background px-4 py-3 text-foreground outline-none transition focus:ring-2 focus:ring-primary"
             />

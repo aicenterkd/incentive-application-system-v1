@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import ExcelJS from "exceljs"
 import { getAllApplications } from "@/lib/supabase/store"
+import sizeOf from "image-size"
 
 function getImageExtension(mimeType: string): string {
   const map: Record<string, string> = {
@@ -14,19 +15,34 @@ function getImageExtension(mimeType: string): string {
   return map[mimeType?.toLowerCase()] || "jpeg"
 }
 
-function parseBase64Data(data: string): { base64: string; extension: string } | null {
+function parseBase64Data(data: string): { base64: string; extension: string; width: number; height: number } | null {
   if (!data || typeof data !== "string") return null
+
+  let base64Str = data
+  let ext = "jpeg"
+
   if (data.startsWith("data:image/")) {
     const match = data.match(/^data:image\/(\w+);base64,(.+)$/)
     if (match) {
-      const ext = getImageExtension(`image/${match[1]}`)
-      return { base64: match[2], extension: ext }
+      ext = getImageExtension(`image/${match[1]}`)
+      base64Str = match[2]
     }
   }
-  return { base64: data, extension: "jpeg" }
+
+  try {
+    // Get image dimensions from base64
+    const buffer = Buffer.from(base64Str, 'base64')
+    const dimensions = sizeOf(buffer)
+    const width = dimensions.width || 200
+    const height = dimensions.height || 150
+
+    return { base64: base64Str, extension: ext, width, height }
+  } catch {
+    return { base64: base64Str, extension: ext, width: 200, height: 150 }
+  }
 }
 
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; extension: string } | null> {
+async function fetchImageAsBase64(url: string): Promise<{ base64: string; extension: string; width: number; height: number } | null> {
   try {
     const response = await fetch(url)
     if (!response.ok) return null
@@ -38,7 +54,12 @@ async function fetchImageAsBase64(url: string): Promise<{ base64: string; extens
     const contentType = response.headers.get('content-type') || 'image/jpeg'
     const extension = getImageExtension(contentType)
 
-    return { base64, extension }
+    // Get image dimensions
+    const dimensions = sizeOf(buffer)
+    const width = dimensions.width || 200
+    const height = dimensions.height || 150
+
+    return { base64, extension, width, height }
   } catch (error) {
     console.error('Failed to fetch image:', url, error)
     return null
@@ -138,9 +159,16 @@ export async function GET(request: NextRequest) {
             base64: imageData.base64,
             extension: imageData.extension,
           })
+
+          // Maintain aspect ratio: fit within max height
+          const maxHeight = ROW_HEIGHT - 8
+          const aspectRatio = imageData.width / imageData.height
+          const imageHeight = maxHeight
+          const imageWidth = imageHeight * aspectRatio
+
           sheet1.addImage(imageId, {
             tl: { col: 4, row: rowIndex - 1 },
-            ext: { width: 200, height: ROW_HEIGHT - 8 },
+            ext: { width: imageWidth, height: imageHeight },
             editAs: "oneCell",
           })
         } catch {
